@@ -5,122 +5,103 @@ import re
 # 1. 자동 채점 로직 (Rule Engine)
 # ==========================================
 
-def grade_set1_q1(ans_a, ans_b, ans_c):
-    """실전 적용-1 [서·논술형 1] 채점"""
-    score = 0
-    feedback = []
-
-    # ㉠ 검증: 난이도가 낮음 / 쉬움
-    pattern_a = r"(쉬운|부담\s*없는|친숙한|노력이\s*적게|난이도가\s*낮은)"
-    if re.search(pattern_a, ans_a):
-        score += 1
-        feedback.append("㉠ 정답 (1점): 쉬운 과제 특성 적절히 언급")
-    else:
-        feedback.append("㉠ 오답 (0점): '쉬운/친숙한/부담 없는' 등의 과제 특성이 누락됨")
-
-    # ㉡ 검증: 혼자 + 집중/연습 (오개념 방지: 타인/함께 언급 시 오답)
-    pattern_b_self = r"(혼자|독립|단독)"
-    pattern_b_focus = r"(집중|연습|몰두|몰입)"
-    wrong_b = r"(함께|다른\s*사람|모임|타인)"
-
-    if re.search(wrong_b, ans_b):
-        feedback.append("㉡ 오답 (0점 - 오개념): '타인과 함께함' 등 잘못된 환경 언급")
-    elif re.search(pattern_b_self, ans_b) and re.search(pattern_b_focus, ans_b):
-        score += 1
-        feedback.append("㉡ 정답 (1점): '혼자'와 '집중/연습' 조건 모두 충족")
-    else:
-        feedback.append("㉡ 오답 (0점): '혼자' 및 '집중/연습' 관련 핵심 표현 부족")
-
-    # ㉢ 검증: 학술 용어 (사회적 억제)
-    ans_c_clean = ans_c.strip().replace(" ", "")
-    if "사회적억제" in ans_c_clean:
-        score += 1
-        feedback.append("㉢ 정답 (1점): 정확한 학술 용어 기재")
-    else:
-        feedback.append("㉢ 오답 (0점): '사회적 억제' 용어 불일치")
-
-    return score, feedback
+def validate_element_a_content(elem_a, required_patterns):
+    """
+    [요소 A] 내에 [필요한 내용]이 필수적으로 포함되어 있는지 검증하는 함수
+    elem_a: 학생이 작성한 [요소 A] 문장
+    required_patterns: [필요한 내용]을 상징하는 정규표현식 패턴 목록
+    """
+    for pattern in required_patterns:
+        if re.search(pattern, elem_a):
+            return True, "필수 내용 포함 확인"
+    return False, "[요소 A]에 조건에서 요구하는 [필요한 내용]이 누락됨"
 
 
-def grade_set1_q2(method1, ans1, method2, ans2):
-    """실전 적용-1 [서·논술형 2] 채점"""
-    score = 0
-    feedback = []
-
-    # 중복 선택 차단
-    if method1 == method2:
-        return 0, ["오답 (전체 0점): (1)과 (2)에서 동일한 설명 방법을 중복 선택함"]
-
-    methods = [(method1, ans1, "(1)번 문장"), (method2, ans2, "(2)번 문장")]
-    
-    # 설명 방법별 표지(Marker) 패턴
-    markers = {
-        "예시": r"(예를\s*들어|예컨대|사례로|~처럼)",
-        "인과": r"(~기\s*때문에|~하여|그\s*결과|따라서|원인은)",
-        "대조": r"(~와\s*달리|~인\s*반면|대조적으로|~지만)",
-        "정의": r"(~란|~을\s*뜻한다|~을\s*의미한다|~라고\s*한다)"
-    }
-
-    # 지문 키워드 DB (1개 이상 필수)
-    keywords = r"(쉬운\s*과제|어려운\s*과제|사회적\s*촉진|사회적\s*억제|혼자|함께|집중|모임|도서관)"
-
-    for m_type, m_text, label in methods:
-        m_score = 0
-        # 1. 지문 키워드 포함 검증
-        if not re.search(keywords, m_text):
-            feedback.append(f"{label} 오답 (0점): 지문 핵심 키워드가 포함되지 않음")
-            continue
-
-        # 2. 선택한 설명 방법의 특성(표지) 구현 검증
-        if re.search(markers[m_type], m_text):
-            m_score += 2
-            feedback.append(f"{label} 정답 (2점): [{m_type}]의 특성을 살려 지문 내용을 적절히 서술함")
-        else:
-            feedback.append(f"{label} 오답 (0점): 선택한 설명 방법[{m_type}]에 맞는 구문 표지(예: {markers[m_type]})가 문장에 드러나지 않음")
-        
-        score += m_score
-
-    return score, feedback
+def check_logical_connection(elem_a, elem_b, semantic_map):
+    """[요소 A]와 [요소 B] 간의 실질적 의미 연결성을 검증하는 함수"""
+    for a_keywords, b_keywords in semantic_map:
+        if any(re.search(a_kw, elem_a) for a_kw in a_keywords):
+            if any(re.search(b_kw, elem_b) for b_kw in b_keywords):
+                return True, "연결성 통과"
+            else:
+                return False, f"요소 A('{elem_a}')와 요소 B('{elem_b}')가 내용상 연결되지 않음"
+    return True, "기본 통과"
 
 
 def grade_set1_q3(visual_plan, visual_effect, audio_plan, audio_effect):
-    """실전 적용-1 [서·논술형 3] 채점 (총 6점)"""
+    """실전 적용-1 [서·논술형 3] 채점 (요소 A 필수 내용 검증 강화)"""
     score = 0
     feedback = []
 
-    # [시각 연출 1점] 혼자/독립/책상 등 [장면 1]과 대비되는 연출
-    vis_plan_pattern = r"(혼자|독립|책상|방|차분|단독)"
-    if re.search(vis_plan_pattern, visual_plan):
-        score += 1
-        feedback.append("시각 연출 정답 (1점): [장면 1]과 대비되는 독립/혼자 있는 장면 연출")
-    else:
-        feedback.append("시각 연출 오답 (0점): '혼자/독립된 공간' 등 대비되는 연출 미비")
+    # ----------------------------------------------------
+    # 1. 시각 영역: [요소 A = 시각 연출] / [요소 B = 시각 효과]
+    # ----------------------------------------------------
+    # [요소 A]에 반드시 들어가야 할 [필요한 내용] 패턴 (혼자/독립/책상/단독 등)
+    vis_required_a = [r"혼자", r"독립", r"책상", r"방", r"차분", r"단독"]
+    is_vis_a_valid, vis_a_msg = validate_element_a_content(visual_plan, vis_required_a)
 
-    # [시각 효과 2점] 지문 근거(어려운 과제/혼자 집중) + 효과
+    if is_vis_a_valid:
+        score += 1
+        feedback.append("시각 연출 정답 (1점): [요소 A]에 필요한 핵심 연출 내용이 적절히 포함됨")
+    else:
+        feedback.append(f"시각 연출 오답 (0점 - 필수 내용 누락): 작성된 [요소 A]('{visual_plan}')에 조건에서 요구하는 [필요한 내용](예: 혼자/독립된 공간/책상 등)이 담겨 있지 않음")
+
+    # [요소 B] 효과 및 A-B 연결성 검증
     vis_effect_kw = r"(어려운\s*과제|도전|집중|방해|사회적\s*억제)"
-    if re.search(vis_effect_kw, visual_effect):
-        score += 2
-        feedback.append("시각 효과 정답 (2점): 지문 속 핵심 상황(어려운 과제/집중)을 근거로 효과 서술")
-    else:
-        feedback.append("시각 효과 오답 (0점): 지문 내용 근거 누락 (단순 일반론은 인정 불가)")
+    has_vis_conclusion = bool(re.search(r"(효과가\s*있다|강조한다|보여준다|전달한다|돋보이게\s*한다)", visual_effect))
+    vis_semantic_map = [([r"혼자", r"방", r"책상"], [r"어려운\s*과제", r"집중", r"사회적\s*억제"])]
+    is_vis_connected, _ = check_logical_connection(visual_plan, visual_effect, vis_semantic_map)
 
-    # [청각 연출 1점] 정적/초침/배경음 없음
-    aud_plan_pattern = r"(정적|고요|초침|배경음\s*없|소리\s*없)"
-    if re.search(aud_plan_pattern, audio_plan):
+    if is_vis_a_valid:
+        if re.search(vis_effect_kw, visual_effect) and has_vis_conclusion:
+            if is_vis_connected:
+                score += 2
+                feedback.append("시각 효과 정답 (2점): 시각 연출(요소 A)과 효과 서술(요소 B)이 논리적으로 긴밀히 연결됨")
+            else:
+                feedback.append(f"시각 효과 오답 (0점 - 논리적 연결 오류): [요소 A]('{visual_plan}')와 [요소 B]('{visual_effect}')의 내용이 서로 호응하지 않음")
+        elif re.search(vis_effect_kw, visual_effect) and not has_vis_conclusion:
+            feedback.append("시각 효과 오답 (0점 - 결론 누락): 근거는 있으나 최종 효과/결론 서술이 불명확함")
+        else:
+            feedback.append("시각 효과 오답 (0점): 지문 내용 근거 누락")
+    else:
+        feedback.append("시각 효과 오답 (0점): [요소 A]의 내용이 올바르지 않아 연계된 효과도 인정 불가")
+
+
+    # ----------------------------------------------------
+    # 2. 청각 영역: [요소 A = 청각 연출] / [요소 B = 청각 효과]
+    # ----------------------------------------------------
+    # [요소 A]에 반드시 들어가야 할 [필요한 내용] 패턴 (정적/고요/초침/소리 없음 등)
+    aud_required_a = [r"정적", r"고요", r"초침", r"배경음\s*없", r"소리\s*없"]
+    is_aud_a_valid, aud_a_msg = validate_element_a_content(audio_plan, aud_required_a)
+
+    if is_aud_a_valid:
         score += 1
-        feedback.append("청각 연출 정답 (1점): [장면 1]과 대비되는 정적 연출")
+        feedback.append("청각 연출 정답 (1점): [요소 A]에 필요한 핵심 연출 내용이 적절히 포함됨")
     else:
-        feedback.append("청각 연출 오답 (0점): 정적/고요함 등의 청각적 대비 요소 부족")
+        feedback.append(f"청각 연출 오답 (0점 - 필수 내용 누락): 작성된 [요소 A]('{audio_plan}')에 조건에서 요구하는 [필요한 내용](예: 정적/고요함/배경음 없음 등)이 담겨 있지 않음")
 
-    # [청각 효과 2점] 지문 근거 + 효과
+    # [요소 B] 효과 및 A-B 연결성 검증
     aud_effect_kw = r"(소음|방해|혼자|집중|사회적\s*억제)"
-    if re.search(aud_effect_kw, audio_effect):
-        score += 2
-        feedback.append("청각 효과 정답 (2점): 청각적 요인과 지문 내용(집중/억제) 간 연결 명확")
+    has_aud_conclusion = bool(re.search(r"(효과가\s*있다|강조한다|보여준다|전달한다|극대화한다)", audio_effect))
+    aud_semantic_map = [([r"정적", r"고요", r"초침", r"배경음\s*없"], [r"소음", r"방해", r"집중", r"사회적\s*억제"])]
+    is_aud_connected, _ = check_logical_connection(audio_plan, audio_effect, aud_semantic_map)
+
+    if is_aud_a_valid:
+        if re.search(aud_effect_kw, audio_effect) and has_aud_conclusion:
+            if is_aud_connected:
+                score += 2
+                feedback.append("청각 효과 정답 (2점): 청각 연출(요소 A)과 효과 서술(요소 B)이 논리적으로 긴밀히 연결됨")
+            else:
+                feedback.append(f"청각 효과 오답 (0점 - 논리적 연결 오류): [요소 A]('{audio_plan}')와 [요소 B]('{audio_effect}')의 내용이 서로 상응하지 않음")
+        elif re.search(aud_effect_kw, audio_effect) and not has_aud_conclusion:
+            feedback.append("청각 효과 오답 (0점 - 결론 누락): 근거는 있으나 최종 효과/결론 서술이 불명확함")
+        else:
+            feedback.append("청각 효과 오답 (0점): 지문 속 개념과의 연계성 미흡")
     else:
-        feedback.append("청각 효과 오답 (0점): 지문 속 개념과의 연계성 미흡")
+        feedback.append("청각 효과 오답 (0점): [요소 A]의 내용이 올바르지 않아 연계된 효과도 인정 불가")
 
     return score, feedback
+
 
 # ==========================================
 # 2. Streamlit UI 화면 구성
@@ -129,61 +110,27 @@ def grade_set1_q3(visual_plan, visual_effect, audio_plan, audio_effect):
 st.set_page_config(page_title="서·논술형 자동 채점 시스템", layout="wide")
 
 st.title("📝 국어 서·논술형 문항 자동 채점 시스템")
-st.caption("1~3번 세트 문항 채점 기준 및 정교한 규칙 알고리즘 기반 자동 채점 엔진")
+st.caption("[요소 A] 필수 내용 포함 여부 검증 알고리즘 적용")
 
 st.sidebar.header("📌 세트 선택")
-selected_set = st.sidebar.selectbox("채점할 문항 세트를 선택하세요", ["실전 적용-1 (사회적 촉진/억제)", "실전 적용-2 (정전기)", "실전 적용-3 (AI 그림)"])
+selected_set = st.sidebar.selectbox("채점할 문항 세트를 선택하세요", ["실전 적용-1 (사회적 촉진/억제)"])
 
 if selected_set == "실전 적용-1 (사회적 촉진/억제)":
-    st.header(" [실전 적용-1] 사회적 촉진과 사회적 억제 채점")
+    st.header(" [실전 적용-1] 서·논술형 3번 ([요소 A] 필수 내용 누락 검증 시연)")
+    st.caption("💡 **테스트 가이드**: [요소 A](시각 연출)에 '예쁜 카페에서 활기차게 웃는 장면'처럼 필요한 내용('혼자/독립된 공간')이 누락되면 **[요소 A] 및 연계된 [요소 B]까지 모두 오답 처리**됩니다.")
+
+    v_plan = st.text_input("Ⓐ 시각 연출 계획 [요소 A]:", value="화려하고 넓은 도서관에서 여러 명이 어울리는 모습") # 필수 내용 누락 테스트용
+    v_eff = st.text_area("Ⓐ 시각 연출 효과 [요소 B]:", value="어려운 과제를 할 때 집중력을 높여주는 효과가 있다.")
     
-    tab1, tab2, tab3 = st.tabs(["서·논술형 1 (표 요약)", "서·논술형 2 (설명 방법)", "서·논술형 3 (영상 기획)"])
+    a_plan = st.text_input("Ⓑ 청각 연출 계획 [요소 A]:", value="배경음악 없이 시계 초침 소리만 잔잔하게 들리도록 한다.") # 정상 입력
+    a_eff = st.text_area("Ⓑ 청각 연출 효과 [요소 B]:", value="주변 소음을 제거하여 방해받지 않고 혼자 집중해야 하는 '사회적 억제' 상황의 특성을 청각적으로 전달하는 효과가 있다.")
     
-    with tab1:
-        st.subheader("[서·논술형 1] 표 빈칸 채우기 (총 3점)")
-        st.write("**지문 내용을 바탕으로 ㉠~㉢에 들어갈 적절한 말을 쓰시오.**")
-        ans_a = st.text_input("㉠ 답안 입력:", placeholder="예: 비교적 쉬운 취미 생활이나 큰 노력이 들지 않는 과제")
-        ans_b = st.text_input("㉡ 답안 입력:", placeholder="예: 차분하게 혼자 집중하는 시간을 가짐")
-        ans_c = st.text_input("㉢ 답안 입력:", placeholder="예: 사회적 억제")
-        
-        if st.button("㉠~㉢ 채점하기"):
-            score, feedback = grade_set1_q1(ans_a, ans_b, ans_c)
-            st.metric("최종 점수", f"{score} / 3 점")
-            for fb in feedback:
-                st.write("- " + fb)
-
-    with tab2:
-        st.subheader("[서·논술형 2] 설명 방법을 활용한 문장 작성 (총 4점)")
-        st.info("💡 **모범 답안 선택지 안내**: 예시, 인과, 대조, 정의 중 2개를 선택하여 문장을 완성하세요.")
-        
-        col1, col2 = st.compile_config if hasattr(st, 'compile_config') else (st.columns(2))
-        with col1:
-            m1 = st.selectbox("(1)번 설명 방법 선택:", ["대조", "예시", "인과", "정의"], key="m1")
-            a1 = st.text_area("(1)번 문장 작성:", placeholder="예: 쉬운 과제는 함께할 때 효율이 높아지는 반면, 어려운 과제는 혼자 집중할 때 좋다.")
-        
-        with col2:
-            m2 = st.selectbox("(2)번 설명 방법 선택:", ["예시", "대조", "인과", "정의"], key="m2")
-            a2 = st.text_area("(2)번 문장 작성:", placeholder="예: 예를 들어, 복잡한 수학 문제나 공무원 시험 공부는 혼자서 연습하는 것이 좋다.")
-            
-        if st.button("설명문 채점하기"):
-            score, feedback = grade_set1_q2(m1, a1, m2, a2)
-            st.metric("최종 점수", f"{score} / 4 점")
-            for fb in feedback:
-                st.write("- " + fb)
-
-    with tab3:
-        st.subheader("[서·논술형 3] 영상 기획안 및 효과 서술 (총 6점)")
-        v_plan = st.text_input("Ⓐ 시각 연출 계획 (1점):", placeholder="예: 조용한 방에서 학생 혼자 책상에 앉아 집중하는 모습을 보여준다.")
-        v_eff = st.text_area("Ⓐ 시각 연출 효과 (2점):", placeholder="예: 혼자 공부하는 모습을 보여줌으로써, 어려운 과제는 혼자 차분히 집중해야 한다는 지문 내용을 강조한다.")
-        
-        a_plan = st.text_input("Ⓑ 청각 연출 계획 (1점):", placeholder="예: 배경음악 없이 시계 초침 소리만 잔잔하게 들리도록 한다.")
-        a_eff = st.text_area("Ⓑ 청각 연출 효과 (2점):", placeholder="예: 주변 소음을 제거하여 방해받지 않고 혼자 집중해야 하는 '사회적 억제' 상황의 특성을 청각적으로 보여준다.")
-        
-        if st.button("영상 기획안 채점하기"):
-            score, feedback = grade_set1_q3(v_plan, v_eff, a_plan, a_eff)
-            st.metric("최종 점수", f"{score} / 6 점")
-            for fb in feedback:
-                st.write("- " + fb)
-
-else:
-    st.info("실전 적용-2 및 3 세트 채점 모듈도 동일한 규칙 기반으로 확장하여 탑재할 수 있습니다.")
+    if st.button("채점 실행하기"):
+        score, feedback = grade_set1_q3(v_plan, v_eff, a_plan, a_eff)
+        st.metric("최종 점수", f"{score} / 6 점")
+        st.subheader("채점 피드백 상세")
+        for fb in feedback:
+            if "오답" in fb:
+                st.error("- " + fb)
+            else:
+                st.success("- " + fb)
